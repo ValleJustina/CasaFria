@@ -5,6 +5,6 @@ Included:
 - Latest Casa Fria pool and aerial photos
 - Embedded Google Map for Casa Fria Private Resort
 - Payment section with the saved QR image at img/gcash-qr.webp
-- Existing Casa Fria Apps Script endpoint, availability calendar, booking form, and BOOK NOW CTAs
+- Existing Apps Script endpoint, exclusive-date availability calendar, booking form, and BOOK NOW CTAs
 
-Important: confirm the live availability mapping before publishing. The current endpoint returns room-level names, while the page expects an exclusive-property record.
+Calendar rule: because Casa Fria is exclusive-use, any Hold or Booked record returned for a date blocks that entire date. A Booked record takes priority over Hold.
