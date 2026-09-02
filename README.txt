@@ -8,3 +8,9 @@ Included:
 - Existing Apps Script endpoint, exclusive-date availability calendar, booking form, and BOOK NOW CTAs
 
 Calendar rule: because Casa Fria is exclusive-use, any Hold or Booked record returned for a date blocks that entire date. A Booked record takes priority over Hold.
+
+Backend setup:
+- Code.gs is the supplied Apps Script updated to use the Casa Fria Google Sheet ID.
+- Paste Code.gs into the Sheet's Apps Script project, run setup once, then deploy a new web app version.
+- Keep the existing /exec URL in index.html if updating the same deployment.
+- Verify the notification email addresses and deposit-slip Drive folder before deployment.
