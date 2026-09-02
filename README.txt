@@ -1,12 +1,10 @@
-CASA FRIA WEBSITE
+Casa Fria website package. Open index.html to view the site.
 
-1. Upload index.html and the assets folder to your web host.
-2. Create a Google Sheet and open Extensions > Apps Script.
-3. Paste Code.gs into the Apps Script project.
-4. Deploy as a Web App with access configured for your intended public booking flow.
-5. Copy the Web App /exec URL into CONFIG.endpoint in index.html.
-6. The first reservation submission creates a Reservations sheet automatically.
+Included:
+- Valle Justina font system: Jost display/interface text and Lora body text
+- Latest Casa Fria pool and aerial photos
+- Embedded Google Map for Casa Fria Private Resort
+- Payment section with the saved QR image at img/gcash-qr.webp
+- Existing Casa Fria Apps Script endpoint, availability calendar, booking form, and BOOK NOW CTAs
 
-Important: the backend currently allows one active reservation request per date. If Casa Fria can host more than one booking on the same date, change the conflict rule before deployment.
-
-Contact numbers, email, payment instructions, logo, social links, and exact address were not supplied, so they were intentionally not invented.
+Important: confirm the live availability mapping before publishing. The current endpoint returns room-level names, while the page expects an exclusive-property record.
