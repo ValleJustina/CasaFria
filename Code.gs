@@ -88,10 +88,10 @@ function setup() {
   var bk = ss.getSheetByName(BOOKINGS_TAB);
   if (!bk) {
     bk = ss.insertSheet(BOOKINGS_TAB);
-    bk.getRange(1, 1, 1, 16).setValues([[
+    bk.getRange(1, 1, 1, 17).setValues([[
       'Received', 'Reference', 'Room', 'Check in', 'Check out', 'Nights',
       'Guests', 'Total', 'Deposit slip', 'Name', 'Mobile', 'Email', 'Notes',
-      'Check-in (ISO)', 'Check-out (ISO)', 'Room sheets'
+      'Check-in (ISO)', 'Check-out (ISO)', 'Room sheets', 'Selections'
     ]]).setFontWeight('bold');
     bk.setFrozenRows(1);
     bk.setColumnWidth(1, 150);
@@ -244,6 +244,24 @@ function holdNights(ss, b) {
     }
 
     var added = 0, skipped = 0;
+    if (b.selections && b.selections.length) {
+      for (var s = 0; s < b.selections.length; s++) {
+        var choice = b.selections[s] || {};
+        var choiceDate = String(choice.date || '').trim();
+        var choiceRoom = String(choice.roomSheet || choice.room || '').trim();
+        if (!/^\d{4}-\d{2}-\d{2}$/.test(choiceDate) || !choiceRoom) continue;
+        var choiceKey = choiceDate + '|' + choiceRoom.toLowerCase();
+        var choiceExisting = have[choiceKey];
+        if (choiceExisting === 'booked' || choiceExisting === 'hold') { skipped++; continue; }
+        cal.appendRow([choiceDate, choiceRoom, 'Hold']);
+        have[choiceKey] = 'hold';
+        added++;
+      }
+      if (!added && !skipped) return '';
+      return added + ' selected package-date(s) put on Hold'
+           + (skipped ? ', ' + skipped + ' already blocked' : '') + '.';
+    }
+
     for (var r = 0; r < rooms.length; r++) {
       for (var t = new Date(start); t < end; t = new Date(t.getTime() + 86400000)) {
         var iso2 = Utilities.formatDate(t, TZ, 'yyyy-MM-dd');
@@ -285,10 +303,13 @@ function upgradeBookingsIso(bk) {
   if (!bk) return 'Bookings tab missing.';
   var lastCol = Math.max(1, bk.getLastColumn());
   var head = bk.getRange(1, 1, 1, lastCol).getValues()[0].map(function (h) { return String(h).trim(); });
-  if (head.indexOf('Room sheets') > -1) return 'Bookings already has the ISO columns.';
+  if (head.indexOf('Room sheets') > -1) {
+    if (head.indexOf('Selections') < 0) bk.getRange(1, lastCol + 1).setValue('Selections').setFontWeight('bold');
+    return 'Bookings already has the ISO columns. Selections column checked.';
+  }
   var start = lastCol + 1;
-  bk.getRange(1, start, 1, 3).setValues([['Check-in (ISO)', 'Check-out (ISO)', 'Room sheets']]).setFontWeight('bold');
-  return 'Bookings upgraded: Check-in (ISO), Check-out (ISO), Room sheets added at the end.';
+  bk.getRange(1, start, 1, 4).setValues([['Check-in (ISO)', 'Check-out (ISO)', 'Room sheets', 'Selections']]).setFontWeight('bold');
+  return 'Bookings upgraded: Check-in (ISO), Check-out (ISO), Room sheets, and Selections added at the end.';
 }
 
 /* ====================== confirm a booking (Sheet menu) ====================== */
@@ -323,7 +344,7 @@ function confirmBookingByRef() {
   var head = bk.getRange(1, 1, 1, bk.getLastColumn()).getValues()[0].map(function (h) { return String(h).trim(); });
   var iRef = head.indexOf('Reference'), iInIso = head.indexOf('Check-in (ISO)'),
       iOutIso = head.indexOf('Check-out (ISO)'), iRooms = head.indexOf('Room sheets'),
-      iRoomDisp = head.indexOf('Room');
+      iRoomDisp = head.indexOf('Room'), iSelections = head.indexOf('Selections');
   if (iRef < 0) { ui.alert('The Bookings tab is missing a Reference column.'); return; }
 
   var rows = bk.getDataRange().getValues();
@@ -337,6 +358,13 @@ function confirmBookingByRef() {
   var outStr = iOutIso >= 0 ? String(found[iOutIso] || '').trim() : '';
   var roomsStr = iRooms >= 0 ? String(found[iRooms] || '').trim() : '';
   var rooms = roomsStr ? roomsStr.split(',').map(function (r) { return r.trim(); }).filter(function (r) { return r; }) : [];
+  var exact = [];
+  if (iSelections >= 0 && found[iSelections]) {
+    try {
+      var saved = JSON.parse(String(found[iSelections]));
+      if (Array.isArray(saved)) exact = saved;
+    } catch (selectionErr) { exact = []; }
+  }
 
   if (!rooms.length && iRoomDisp >= 0) {
     // an older row made before "Room sheets" existed: fall back to the
@@ -346,39 +374,50 @@ function confirmBookingByRef() {
     rooms = disp.split(',').map(function (r) { return r.trim().replace(/\s+Room$/i, ''); }).filter(function (r) { return r; });
   }
 
-  if (!rooms.length || !inStr) {
+  if (!exact.length && (!rooms.length || !inStr)) {
     ui.alert('Found reference "' + ref + '" but it has no room/date detail saved '
       + '(likely an older booking, made before this tool existed). '
       + 'Please change the Status cells for those nights by hand in ' + CALENDAR_TAB + '.');
     return;
   }
 
-  var start = new Date(inStr);
-  var end = outStr ? new Date(outStr) : null;
-  if (isNaN(start.getTime())) { ui.alert('Could not read the check-in date for this booking.'); return; }
-  if (!end || isNaN(end.getTime()) || end <= start) end = new Date(start.getTime() + 86400000);
-
-  var calRows = cal.getDataRange().getValues();
-  var updated = 0, notFound = 0;
-  for (var r = 0; r < rooms.length; r++) {
-    for (var t = new Date(start); t < end; t = new Date(t.getTime() + 86400000)) {
-      var iso = Utilities.formatDate(t, TZ, 'yyyy-MM-dd');
-      var hit = -1;
-      for (var k = 1; k < calRows.length; k++) {
-        var d = calRows[k][0], rm = String(calRows[k][1] || '').trim();
-        var dIso = Object.prototype.toString.call(d) === '[object Date]'
-          ? Utilities.formatDate(d, TZ, 'yyyy-MM-dd') : String(d || '').trim();
-        if (dIso === iso && rm.toLowerCase() === rooms[r].toLowerCase()) { hit = k; break; }
+  var targets = [];
+  if (exact.length) {
+    for (var e = 0; e < exact.length; e++) {
+      var savedDate = String((exact[e] || {}).date || '').trim();
+      var savedRoom = String((exact[e] || {}).roomSheet || (exact[e] || {}).room || '').trim();
+      if (/^\d{4}-\d{2}-\d{2}$/.test(savedDate) && savedRoom) targets.push({ date: savedDate, room: savedRoom });
+    }
+  } else {
+    var start = new Date(inStr);
+    var end = outStr ? new Date(outStr) : null;
+    if (isNaN(start.getTime())) { ui.alert('Could not read the check-in date for this booking.'); return; }
+    if (!end || isNaN(end.getTime()) || end <= start) end = new Date(start.getTime() + 86400000);
+    for (var r = 0; r < rooms.length; r++) {
+      for (var t = new Date(start); t < end; t = new Date(t.getTime() + 86400000)) {
+        targets.push({ date: Utilities.formatDate(t, TZ, 'yyyy-MM-dd'), room: rooms[r] });
       }
-      if (hit < 0) { notFound++; continue; }
-      cal.getRange(hit + 1, 3).setValue('Booked');
-      calRows[hit][2] = 'Booked';   // keep the in-memory copy in step, in case of duplicate rows
-      updated++;
     }
   }
 
-  var msg = 'Reference ' + ref + ': marked ' + updated + ' room-night(s) as Booked across ' + rooms.length + ' room(s).';
-  if (notFound) msg += ' ' + notFound + ' night(s) had no matching row in ' + CALENDAR_TAB + ' and were left alone.';
+  var calRows = cal.getDataRange().getValues();
+  var updated = 0, notFound = 0;
+  for (var q = 0; q < targets.length; q++) {
+    var hit = -1;
+    for (var k = 1; k < calRows.length; k++) {
+      var d = calRows[k][0], rm = String(calRows[k][1] || '').trim();
+      var dIso = Object.prototype.toString.call(d) === '[object Date]'
+        ? Utilities.formatDate(d, TZ, 'yyyy-MM-dd') : String(d || '').trim();
+      if (dIso === targets[q].date && rm.toLowerCase() === targets[q].room.toLowerCase()) { hit = k; break; }
+    }
+    if (hit < 0) { notFound++; continue; }
+    cal.getRange(hit + 1, 3).setValue('Booked');
+    calRows[hit][2] = 'Booked';
+    updated++;
+  }
+
+  var msg = 'Reference ' + ref + ': marked ' + updated + ' selected package-date(s) as Booked.';
+  if (notFound) msg += ' ' + notFound + ' selection(s) had no matching row in ' + CALENDAR_TAB + ' and were left alone.';
   ui.alert(msg);
 }
 
@@ -471,17 +510,18 @@ function doPost(e) {
       b.notes   || '',
       b.checkInISO  || '',
       b.checkOutISO || '',
-      (b.roomSheets && b.roomSheets.length) ? b.roomSheets.join(', ') : ''
+      (b.roomSheets && b.roomSheets.length) ? b.roomSheets.join(', ') : '',
+      (b.selections && b.selections.length) ? JSON.stringify(b.selections) : ''
     ];
 
     var ss = SpreadsheetApp.openById(SHEET_ID);
     var bk = ss.getSheetByName(BOOKINGS_TAB);
     if (!bk) {
       bk = ss.insertSheet(BOOKINGS_TAB);
-      bk.getRange(1, 1, 1, 16).setValues([[
+      bk.getRange(1, 1, 1, 17).setValues([[
         'Received', 'Reference', 'Room', 'Check in', 'Check out', 'Nights',
         'Guests', 'Total', 'Deposit slip', 'Name', 'Mobile', 'Email', 'Notes',
-        'Check-in (ISO)', 'Check-out (ISO)', 'Room sheets'
+        'Check-in (ISO)', 'Check-out (ISO)', 'Room sheets', 'Selections'
       ]]).setFontWeight('bold');
       bk.setFrozenRows(1);
     }
