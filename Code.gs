@@ -18,7 +18,7 @@
  *      Google will ask you to authorise it. Choose your account, then
  *      "Advanced" > "Go to ... (unsafe)" > Allow. That warning is normal
  *      for your own scripts. It now also asks for Drive, because deposit
- *      slips are saved into a folder called "Valle Justina deposit slips".
+ *      slips are saved into a folder called "Casa Fria deposit slips".
  *   4. Deploy > New deployment > gear icon > Web app
  *        Execute as:      Me
  *        Who has access:  Anyone            <-- this one matters most
@@ -41,9 +41,6 @@
 var SHEET_ID        = '1l8vRFpiyAIrcY51TFY0DGeUrJ83uKsJqfyMm4E0nRVM';
 var CALENDAR_TAB    = 'Update Here';    // the Date | Room | Status tab (was "Sheet1")
 var BOOKINGS_TAB    = 'Bookings';  // created automatically
-var DAYPASS_TAB     = 'Day Pass';  // entrance and swimming tickets
-var CAMPING_TAB     = 'Camping';   // camping tickets
-var SHUTTLE_TAB     = 'Shuttle';   // round trip shuttle tickets
 /* Optional: paste a dedicated Casa Fria Drive folder id here.
    When blank, setup creates or reuses the named folder below. */
 var SLIP_FOLDER_ID  = '';
@@ -101,11 +98,6 @@ function setup() {
     bk.setColumnWidth(13, 320);
   }
 
-  // create the ticket tabs
-  ticketTab(ss, DAYPASS_TAB);
-  ticketTab(ss, CAMPING_TAB);
-  ticketTab(ss, SHUTTLE_TAB);
-
   // an existing Bookings tab predates the Deposit slip column, so widen it
   var bookNote = upgradeBookings(bk || ss.getSheetByName(BOOKINGS_TAB));
   upgradeBookingsIso(bk || ss.getSheetByName(BOOKINGS_TAB));
@@ -133,7 +125,7 @@ function setup() {
   try {
     MailApp.sendEmail({
       to: NOTIFY_TO,
-      subject: RESORT_NAME + ' website is connected',
+      subject: 'CASA FRIA | Website connected',
       cc: NOTIFY_CC,
       body: 'Setup finished. Reservation requests from the website will arrive at this address, '
           + 'copied to ' + NOTIFY_CC + ', and be logged in the Bookings tab of the master sheet.'
@@ -144,7 +136,7 @@ function setup() {
   }
 
   var report = [
-    'Tabs OK: ' + CALENDAR_TAB + ', ' + BOOKINGS_TAB + ', ' + DAYPASS_TAB + ', ' + CAMPING_TAB + ', ' + SHUTTLE_TAB + '.',
+    'Tabs OK: ' + CALENDAR_TAB + ', ' + BOOKINGS_TAB + '.',
     bookNote,
     driveNote,
     mailNote,
@@ -201,26 +193,6 @@ function doGet(e) {
 }
 
 /* ====================== POST: a reservation request ====================== */
-
-function ticketTab(ss, name) {
-  // Only `setup` is meant to be run by hand. Everything else is called by the
-  // web app with arguments, so say so rather than throwing a TypeError.
-  if (!ss || !name) return mustNotRunByHand('ticketTab');
-  var tk = ss.getSheetByName(name);
-  if (!tk) {
-    tk = ss.insertSheet(name);
-    tk.getRange(1, 1, 1, 13).setValues([[
-      'Issued', 'Ticket', 'Date', 'Guests', 'What they bought', 'Total',
-      'Paid by', 'Their reference', 'Deposit slip', 'Name', 'Mobile', 'Email', 'Notes'
-    ]]).setFontWeight('bold');
-    tk.setFrozenRows(1);
-    tk.setColumnWidth(1, 150);
-    tk.setColumnWidth(2, 190);
-    tk.setColumnWidth(5, 330);
-    tk.setColumnWidth(13, 280);
-  }
-  return tk;
-}
 
 /* A Bookings tab made before deposit slips existed has twelve columns and no
    slip column, so a new thirteen-value row would land one place out and put a
@@ -321,7 +293,7 @@ function upgradeBookingsIso(bk) {
 
 /* ====================== confirm a booking (Sheet menu) ====================== */
 
-/* Adds "Valle Justina" to the Sheet's own menu bar. Runs automatically every
+/* Adds "Casa Fria" to the Sheet's own menu bar. Runs automatically every
    time the sheet is opened; nothing to run by hand. */
 function onOpen() {
   SpreadsheetApp.getUi()
@@ -335,12 +307,7 @@ function onOpen() {
 /* Staff-facing helper: type a reservation's reference number, and every
    night that request put on Hold across every room it covers is flipped to
    Booked in one go. Nothing is changed unless the reference is found and at
-   least one matching Hold row exists.
-
-   This never touches Day Pass, Camping, or Shuttle tickets — those are
-   already paid, so there is nothing to "confirm" about them. It only
-   applies to room reservations, which are logged as a request first and
-   held pending a deposit. */
+   least one matching Hold row exists. */
 function confirmBookingByRef() {
   var ui = SpreadsheetApp.getUi();
   var resp = ui.prompt('Confirm booking', 'Reference number (e.g. CF-20260803-AB12):', ui.ButtonSet.OK_CANCEL);
@@ -480,26 +447,10 @@ function doPost(e) {
     var b = null;
     try { b = JSON.parse(e.postData.contents); } catch (x) { b = null; }
     if (!b || typeof b !== 'object') return json({ ok: false, error: 'could not read that request' });
-    if (!b.ref && !b.name && !b.room && !b.kind) return json({ ok: false, error: 'empty request ignored' });
+    if (!b.ref && !b.name && !b.room) return json({ ok: false, error: 'empty request ignored' });
 
     var now = Utilities.formatDate(new Date(), TZ, 'yyyy-MM-dd HH:mm');
 
-    /* Day pass, camping, and shuttle tickets go in their own tab. They are
-       already paid, so they are a record rather than a request, and the
-       email says so. */
-    if (b.kind === 'daypass' || b.kind === 'camping' || b.kind === 'shuttle') {
-      var ss2 = SpreadsheetApp.openById(SHEET_ID);
-      var tab = b.kind === 'camping' ? CAMPING_TAB : (b.kind === 'shuttle' ? SHUTTLE_TAB : DAYPASS_TAB);
-      var tk = ticketTab(ss2, tab);
-      tk.appendRow([
-        now, b.ref || '', b.date || '', b.guests || '', b.lines || '',
-        b.total || '', b.pay || '', b.payRef || '', '',
-        b.name || '', b.mobile || '', b.email || '', b.notes || ''
-      ]);
-      b._slipUrl = attachSlip(tk, tk.getLastRow(), 9, b.slip, b.ref);
-      notifyTicket(b);
-      return json({ ok: true, ref: b.ref || '' });
-    }
     /* The three columns at the end are not shown to staff in the usual course
        of things, they exist so "Confirm booking by reference" (the sheet's
        custom menu) can find the exact calendar rows a booking put on Hold,
@@ -568,7 +519,7 @@ function notify(b) {
       + esc(v) + '</td></tr>';
   };
 
-  var subject = 'Reservation request ' + (b.ref || '') + ' - ' + (b.name || 'website');
+  var subject = 'CASA FRIA | Reservation request ' + (b.ref || '') + ' - ' + (b.name || 'website');
 
   var html =
       '<div style="font:15px Arial,sans-serif;color:#1a1a1a;max-width:560px">'
@@ -626,76 +577,6 @@ function notify(b) {
   if (NOTIFY_CC) opts.cc = NOTIFY_CC;
   if (b.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.email)) opts.replyTo = b.email;
 
-  MailApp.sendEmail(opts);
-}
-
-/* ====================== the ticket email ====================== */
-
-function notifyTicket(b) {
-  if (!b) return mustNotRunByHand('notifyTicket');
-  var esc = function (s) {
-    return String(s == null ? '' : s)
-      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
-  };
-  var line = function (k, v) {
-    if (!v && v !== 0) return '';
-    return '<tr><td style="padding:7px 16px 7px 0;color:#7A675C;font:13px Arial,sans-serif;'
-      + 'white-space:nowrap;vertical-align:top">' + esc(k) + '</td>'
-      + '<td style="padding:7px 0;color:#1a1a1a;font:15px Arial,sans-serif">'
-      + esc(v) + '</td></tr>';
-  };
-
-  var what = b.label || (b.kind === 'camping' ? 'Camping' : b.kind === 'shuttle' ? 'Shuttle' : 'Day Pass');
-  var subject = what + ' ticket ' + (b.ref || '') + ' - ' + (b.name || 'website');
-
-  var html =
-      '<div style="font:15px Arial,sans-serif;color:#1a1a1a;max-width:560px">'
-    +   '<p style="font-size:12px;letter-spacing:.14em;text-transform:uppercase;color:#8A5A18;margin:0 0 6px">'
-    +     RESORT_NAME + '</p>'
-    +   '<h2 style="margin:0 0 4px;font-weight:normal;font-size:22px">' + esc(what) + ' ticket issued</h2>'
-    +   '<p style="color:#7A675C;margin:0 0 20px">Ticket <b style="color:#1a1a1a">' + esc(b.ref || '') + '</b>. '
-    +     'The guest says they have already paid. Check their reference against the account before they come up.</p>'
-    +   '<table cellpadding="0" cellspacing="0" style="border-collapse:collapse;width:100%;'
-    +     'border-top:2px solid #C88A3C">'
-    +     line('Date', b.date)
-    +     line('Guests', b.guests)
-    +     line('What they bought', b.lines)
-    +     line('Total', b.total)
-    +     line('Paid by', b.pay)
-    +     line('Their reference', b.payRef)
-    +     line('Name', b.name)
-    +     line('Mobile', b.mobile)
-    +     line('Email', b.email)
-    +     line('Notes', b.notes)
-    +     line('Deposit slip', b._slipUrl)
-    +   '</table>'
-    +   '<p style="color:#7A675C;font-size:13px;margin:22px 0 0;padding-top:14px;'
-    +     'border-top:1px solid #e2ddd7">Logged in the Tickets tab of the master sheet.</p>'
-    + '</div>';
-
-  var plain = [
-    RESORT_NAME + ' - ' + what + ' ticket issued',
-    '',
-    'Ticket:    ' + (b.ref || ''),
-    'Date:      ' + (b.date || ''),
-    'Guests:    ' + (b.guests || ''),
-    'Bought:    ' + (b.lines || ''),
-    'Total:     ' + (b.total || ''),
-    'Paid by:   ' + (b.pay || ''),
-    'Their ref: ' + (b.payRef || ''),
-    '',
-    'Name:   ' + (b.name || ''),
-    'Mobile: ' + (b.mobile || ''),
-    'Email:  ' + (b.email || ''),
-    'Notes:  ' + (b.notes || ''),
-    'Slip:   ' + (b._slipUrl || 'none attached'),
-    '',
-    'The guest says they have already paid. Check the reference before they come up.'
-  ].join('\n');
-
-  var opts = { to: NOTIFY_TO, subject: subject, body: plain, htmlBody: html, name: RESORT_NAME };
-  if (NOTIFY_CC) opts.cc = NOTIFY_CC;
-  if (b.email && /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.email)) opts.replyTo = b.email;
   MailApp.sendEmail(opts);
 }
 
