@@ -4,6 +4,7 @@ Included:
 - Valle Justina font system: Jost display/interface text and Lora body text
 - Latest Casa Fria pool and aerial photos
 - Embedded Google Map for Casa Fria Private Resort
+- Standalone Guest Guide at rules.html, linked from the main navigation and footer
 - BDO and GCash details placed directly below the booking total, with the saved QR image at img/gcash-qr.webp
 - Existing Apps Script endpoint, multi-select availability calendar, booking form, and BOOK NOW CTAs
 
